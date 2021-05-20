@@ -1,0 +1,173 @@
+---
+title: 'E2E Testing of excel file downloads with cypress'
+date: '2020-04-08'
+tags: ['cypress', 'e2e', 'testing', 'filedownload']
+summary: 'Recently while working on a project, I had to create a functionality where users can download an excel file consisting of some data.'
+---
+
+![e2e testing with cypress stock image](/static/images/e2e-testing-cypress.png)
+
+Recently while working on a project, I had to create a functionality where users can download an excel file consisting of some data.
+
+In this process, since I am a big fan of E2E Testing with [Cypress.io](https://www.cypress.io/), I decided to write a test suite that could make sure that the excel is being downloaded correctly and also consists of the correct data that our users would expect.
+
+This article assumes a basic understanding of cypress.
+
+<b>Disclaimer</b>
+
+If you haven't tried e2e testing with cypress before, I would highly recommend skipping over to the `References` section and following some of the getting started guides.
+
+<hr />
+
+## 📦 Installation
+
+1. Assuming you have a repo named `dashboard-ui` , create a new folder in it named `e2e`.
+
+2. cd into that folder and execute the following commands inside it
+
+```bash
+npm init
+npm install cypress --save-dev
+```
+
+3. Update the project’s scripts by opening `package.json` and updating your scripts to the following:
+
+```js
+"scripts": {
+   "cy:run": "cypress run --headless -b chrome",
+   "cy:open": "cypress open"
+}
+```
+
+4. You should also see some default folders and files created by cypress for you after you have installed cypress.
+
+![cypress default folders image](https://dev-to-uploads.s3.amazonaws.com/i/4x5590cxxb4h3ee58zws.png)
+
+5. The test that we will write will go inside `integration` folder.
+
+<hr />
+
+## ⚙️ Functionality
+
+For the sake of simplicity, let's say our application only has one feature where users can click on a `download template` button, which can download an excel file comprising of some data in it.
+
+![ui screenshot showing a download template button](https://dev-to-uploads.s3.amazonaws.com/i/n38kyiey2nwdnlpl5oz5.png)
+
+On click of the download template button a file gets downloaded which looks something like this:
+
+![downloaded excel file screenshot](https://dev-to-uploads.s3.amazonaws.com/i/1nwf2mgrcfqzkc9vf8y6.png)
+
+### Demo
+
+![gif to demo excel file download](https://dev-to-uploads.s3.amazonaws.com/i/qdgu5m1q2okz1p7da3ad.gif)
+
+<hr />
+
+## 🧪 E2E Testing
+
+1. Create a new file inside `integration` folder with the name `ExcelDownload.spec.js`.
+
+2. Inside this file our test would first start with checking for existence of our button and then we will click on it.
+
+```js
+cy.get('[data-test-id=export-template-btn').should('be.visible').click()
+```
+
+3. After clicking on it, the file should ideally have been downloaded and now we need to somehow read that file and check if it exists and also check if it consists of the right data in it.
+
+4. To do that, we will first need to install another npm package which can parse the excel and convert it to a json
+
+```bash
+npm install node-xlsx --save-dev
+```
+
+5. After this inside your `plugins/index.js` file we will create a new task
+
+```js
+const xlsx = require('node-xlsx').default
+const fs = require('fs')
+const path = require('path')
+
+module.exports = (on, config) => {
+  // `on` is used to hook into various events Cypress emits
+  on('task', {
+    parseXlsx({ filePath }) {
+      return new Promise((resolve, reject) => {
+        try {
+          const jsonData = xlsx.parse(fs.readFileSync(filePath))
+          resolve(jsonData)
+        } catch (e) {
+          reject(e)
+        }
+      })
+    },
+  })
+}
+```
+
+This function will parse our excel file and convert it to json.
+
+6. Finally let’s complete our test for excel file download
+
+```js
+// data to check against
+const data = ['id', 'config_sku', 'simple_sku', 'fallback_type', 'field', 'value', 'command']
+// check for existence of the button on the ui and then click it
+cy.get('[data-test-id=export-template-btn').should('be.visible').click()
+
+// arbitrary wait so that the download can complete
+cy.wait(2000)
+// call the parseXlsx task we created above to parse the excel and return data as json
+cy.parseXlsx('/Users/Downloads/overrides-template.xlsx').then((jsonData) => {
+  // finally we write the assertion rule to check if that data matches the data we expected the excel file to have.
+  expect(jsonData[0].data[0]).to.eqls(data)
+})
+```
+
+7. With this we can be sure that our excel download functionality is working as expected.
+
+### Test Execution
+
+![demo of running e2e test in cypress](https://dev-to-uploads.s3.amazonaws.com/i/djbl2gv471yftymwi4h9.gif)
+
+8. The only caveat here is how do you know the download path for your CI/CD Pipeline or how can you change that path to something else.
+
+The solution to that is built into cypress. Again inside `plugins/index.js` file we will create another task.
+
+```js
+on('before:browser:launch', (browser = {}, launchOptions) => {
+  const downloadDirectory = path.join(__dirname, '..', 'excelDownloads')
+
+  if (browser.family === 'chromium') {
+    launchOptions.preferences.default['download'] = { default_directory: downloadDirectory }
+  }
+  return launchOptions
+})
+```
+
+Here we are changing the default directory of download to a directory named `excelDownloads` inside of cypress folder.
+
+https://docs.cypress.io/api/plugins/browser-launch-api.html#Change-download-directory
+
+<hr />
+
+## 💡 Conclusion
+
+In conclusion, E2E tests are really important for every app and you should write one too because this is the closest you can get to test how an actual user will use your application.
+
+And as @tlakomy says:
+
+> Sleep better at night with e2e tests and cypress.io
+
+👯 Share this article if you found it helpful!
+
+You can follow me on twitter [@VivekNayyar09](https://twitter.com/viveknayyar09) for more updates.
+
+Also please don't forget to maintain social distance to prevent the virus from spreading and wash your hands regularly. Stay safe and stay at home.
+
+## 🚀 References
+
+- https://softchris.github.io/pages/cypress.html
+- https://docs.cypress.io/guides/getting-started/installing-cypress.html#System-requirements
+- https://dev.to/tlakomy/sleeping-better-at-night-with-cypress-io-59m2
+- https://blog.logrocket.com/how-to-write-useful-end-to-end-tests-with-cypress/

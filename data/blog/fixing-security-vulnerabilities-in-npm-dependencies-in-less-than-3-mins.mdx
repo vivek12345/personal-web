@@ -1,0 +1,140 @@
+---
+title: 'Fixing security vulnerabilities in npm dependencies in less than 3 mins'
+date: '2020-03-19'
+tags: ['javascript', 'security', 'vulnerabilities', 'npm']
+summary: 'Fixing security vulnerabilities in npm dependencies in less than 3 mins'
+---
+
+![fixing security vulnerabilities in npm dependencies stock image](/static/images/security-issues.png)
+
+Hola people!!! 🥑
+
+It’s been a while since I have written a blog and now since most of us are working from home we sort of have a considerable amount of time at hand and I thought why not write about my recent experience of fixing a security vulnerability.
+
+So if any of you in the recent time have seen something like this image below and have no clue how to fix it then this article is for you. When I saw it, I had no clue either but with some research I could fix this.
+
+## 🔬 Problem:
+
+![github security vulnerability bot alert](https://imgur.com/rDV59Wh.jpg)_github security vulnerability bot alert_
+
+So what this means is one of the dependencies in your **package.json** has some security implications which can be exploited by an attacker and can cause problems for you, your product or the company you work for.
+
+For example: [https://snyk.io/vuln/npm:eslint:20180222](https://snyk.io/vuln/npm:eslint:20180222)
+
+> This vulnerability could have caused a **Regular Expression Denial of Service**
+
+<hr />
+
+## 💡 Finding:
+
+In order to find potential vulnerabilities in your repo, you can either do
+
+1. npm audit — which should show you an output like the following image:
+
+![npm audit log](https://imgur.com/hVdQfxs.jpg)_npm audit log_
+
+2. Github security policy can also notify you — something like the following image:
+
+![github security alert](https://imgur.com/2Tqelpk.jpg)_github security alert_
+
+Today when I started working I had to deal with this error where `acorn` and `minimist` were being reported as security vulnerabilities.
+
+<hr />
+
+## 🎉 Solution
+
+Solution to this problem is in steps:-
+
+### 📦 npm update
+
+1. This is the first thing you should do and it's the simplest one too.
+
+- Run npm update — [https://docs.npmjs.com/cli-commands/update.html](https://docs.npmjs.com/cli-commands/update.html)
+
+- Delete your package-lock.json file or for yarn users, delete your yarn.lock file. In an ideal world this would work, but there might be some dependency which does not follow semver and might get updated too.
+
+- So a better solution here would be to only delete the lines corresponding to the vulnerable package in your package-lock.json(or yarn.lock) file.
+
+- Run npm install again
+
+In an ideal scenario, this should have upgraded your dependencies to the next semver version and those libraries might have already fixed the version of there transitive dependencies.
+
+### 🔭 npm audit
+
+2. But if that did not fix your issue, which for `minimist` did not fix for me, then follow the below mentioned steps:
+
+2.1) To fix any dependency, you need to first know which npm package depends on that.
+
+    npm audit
+
+This will tell you the packages which are vulernable.
+
+![npm audit log](https://imgur.com/hVdQfxs.jpg)_npm audit log_
+
+This tells me that `minimist` is required by `mkdirp` and that is required by `mocha`
+
+A quick glance into package-lock.json can give you more information around the affected version.
+
+> In my case mocha(7.1.0) -> mkdirp(0.5.1) -> minimist(0.0.8) — the vulnerable version.
+
+### 🔑 Resolutions key
+
+3. And finally the fix was:
+
+3.1) First npm install the non-vulnerable version, which in my case was `1.2.5`
+
+```
+npm install minimist --save-dev
+```
+
+For `yarn` and `npm` users
+
+3.2) Add a resolutions key in your package.json file
+
+```js
+{
+  "resolutions": {
+    "minimist": "^1.2.5"
+  }
+}
+```
+
+For npm users, we need one more step for that resolutions key to work.
+
+3.3) Use npm-force-resolutions ([https://www.npmjs.com/package/npm-force-resolutions](https://www.npmjs.com/package/npm-force-resolutions))
+
+```bash
+"scripts": {
+  "preinstall": "npx npm-force-resolutions"
+}
+```
+
+3.4) After that run
+
+```bash
+    npm install
+```
+
+That’s it. That solves the dependency issues which can not be updated using either npm update or by uninstalling and reinstalling a new dependency.
+
+To check if the dependency works correctly
+
+    npm ls minimist
+
+This should give you an output like the image below
+
+![npm ls command](https://imgur.com/0RpLLPI.jpg)_npm ls command showing results of a dependency tree_
+
+<hr />
+
+## 🔥 Disclaimer
+
+> If some packages are only compatible with an older version, then this change might break your app. So be careful while resolving to a particular version and test your app before releasing this change.
+
+<hr />
+
+👯 Share this article if you found it helpful!
+
+You can follow me on twitter [@VivekNayyar09](https://twitter.com/VivekNayyar09) for more updates.
+
+Also please don’t forget to maintain social distance to prevent the virus from spreading and wash your hands regularly. Stay safe and stay at home.

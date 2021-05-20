@@ -1,0 +1,381 @@
+---
+title: 'Revealing the magic of AST by writing babel plugins'
+date: '2021-03-05'
+tags: ['ast', 'babel', 'parsers', 'compilers']
+summary: 'The motivation behind writing this blog is to make it easy for everyone to understand what Abstract syntax trees are and how they play an important part in most of the tools we use on a daily basis.'
+---
+
+![ast-image](/static/images/ast-image.png)
+
+When you hear Abstract syntax trees, what is the first thought that occurs in your mind?
+Something to do with compilers? Some complex tree manipulation? Bit manipulations? 🤔
+
+At the beginning of my career, this AST seemed like a complex term with low level compilers and transpilers magic sprinkled in it.
+
+## 💡 Motivation
+
+The motivation behind writing this blog is to make it easy for everyone to understand what Abstract syntax trees are and how they play an important part in most of the tools we use on a daily basis.
+
+Be it babel, webpack, parcel, eslint, codemods, css parsers, css in js - all of these tools use the magic of AST's to manipulate our code and transform it into something else.
+
+In this post, we will unravel this magic and in the process learn to write some super simple babel plugins. Yeah 🎉
+
+## 🤔 What is an AST?
+
+Like every new concept, we will start with a concrete definition.
+According to wikipedia
+
+> An abstract syntax tree is a tree representation of source code written in a programming language. Each node of the tree denotes a construct occurring in the source code.
+
+To understand this, imagine we write a simple line of code in our editor
+
+```js
+const a = 5 + 3
+```
+
+This is a very simple variable assignment and addition of two numbers.
+This simple operation goes through a process of `Tokenization` and `Parsing`.
+
+## 🕹️ Tokenization (Lexical Analysis)
+
+Tokenization or Lexical analysis is the step where a function reads the code as a string and splits it into a list of tokens.
+
+For the sake of simplicity, let's assume every token has the following interface
+
+```ts
+interface Token {
+  type: string
+  value: string
+}
+```
+
+Our code goes through process of lexical analysis and gets broken down into tokens.
+
+![Tokenization](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/j38l2pvrd8ub11j1tiz4.png)
+
+## 🧵 Parsing (Syntactic Analysis)
+
+Post lexical analysis gives us an array of tokens, we pass that through an AST parser(babylon or acorn or espree) which converts it into a tree of AST nodes by establishing dependencies between them.
+
+![AST Tree](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/dl8h4k9xdk80zprwk8gc.png)
+
+The super simple code that we wrote gets converted into a tree of nodes which we call an Abstract syntax tree.
+
+And that entire tree is represented as a json in the following manner
+
+```json
+{
+  "type": "VariableDeclaration",
+  "declarations": [
+    {
+      "type": "VariableDeclarator",
+      "id": {
+        "type": "Identifier",
+        "name": "a"
+      },
+      "init": {
+        "type": "BinaryExpression",
+        "left": {
+          "type": "Literal",
+          "value": 5
+        },
+        "operator": "+",
+        "right": {
+          "type": "Literal",
+          "value": 3
+        }
+      }
+    }
+  ],
+  "kind": "const"
+}
+```
+
+In this json object we notice a param named `type`. We call them AST node types.
+Multiple types of AST nodes exist and for babel we can refer to the following
+[Babel AST Node Types](https://babeljs.io/docs/en/babel-types)
+
+For espree parser(the one eslint uses) we can refer here
+[Eslint AST Node Types](https://github.com/estree/estree/blob/master/es5.md)
+
+Babel, webpack, parcel and all of these tools use a common approach.
+They first convert our code to an AST tree, then apply some transformation on it(add, edit, update, delete), create a new tree out of those transformations and then convert it back to human readable code.
+
+![Babel process - Parse, transform, add/edit/update and then convert back to code](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/83ncpp226mqmc2eipz9t.png)
+
+<br />
+
+To understand what will the AST tree representation of a particular line of code look like, I would recommend to always check [AST Explorer](https://astexplorer.net/)
+
+Now, without wasting any further time, we will write our very first babel plugin.
+This plugin will remove any debugger statements we might have in our code.
+
+## 📕 Babel Plugin - Remove Debugger
+
+Consider having following code in multiple locations of your repo
+
+```js
+function test() {
+  const a = 5
+  debugger
+  const b = 6
+}
+```
+
+It is quite obvious that we would not like this debugger statements to end up in our production app.
+(Note: In a real world app, we would have some bundler or some deployment pipeline step which can help us avoid such mistakes, but for the sake of this example let's assume we do not have any such deployment pipeline).
+
+So we write a babel plugin to do the same for us.
+
+### Writing a babel plugin
+
+**Step 1**: Identify the AST node type we want to target. If we go to AST Explorer and click on line 2, we will notice that the node type gets highlighted in yellow and it shows us that the AST node we have to target is `DebuggerStatement`.
+
+![Alt Text](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/66px7e0g8grpy0w5ex08.png)
+
+**Step 2**: Fire up your editor and create new file. Let's name it `removeDebugger.js`. This will be our plugin file.
+
+Every babel plugin we write from now on will follow a common pattern
+
+```js
+module.exports = function (babel) {
+  return {
+    name: 'remove-debugger-plugin', // this is optional
+    visitor: {},
+  }
+}
+```
+
+We are returning an object with another nested object with the key `visitor` in it. It is named visitor because of the visitor pattern.
+
+**Step 3**: We know the node type that we wish to target is `DebuggerStatement`
+
+So our code will look like this now
+
+```js
+module.exports = function (babel) {
+  return {
+    name: 'remove-debugger-plugin', // this is optional
+    visitor: {
+      DebuggerStatement: function (path) {},
+    },
+  }
+}
+```
+
+Every node that we wish to target has to be a key inside our visitor object.
+
+**Step 4**: Now the only step remaining in this babel plugin is to remove debugger statement node and we do it like this:
+
+```js
+module.exports = function (babel) {
+  return {
+    name: 'remove-debugger-plugin', // this is optional
+    visitor: {
+      DebuggerStatement: function (path) {
+        path.remove()
+      },
+    },
+  }
+}
+```
+
+And that my friends was our first babel plugin.
+
+This babel plugin explains us how to manipulate an AST by removing a node from it.
+
+The next plugin we will learn will explain us how to edit an existing node and convert it into something else
+
+## 📕 Babel Plugin - Alert To Console
+
+So in this we will convert every `alert` statement into a `console.warn` statement.
+
+So our code we wish to change would look something like this
+
+```js
+function test() {
+  const a = 5
+  alert(a)
+}
+```
+
+We will convert this to
+
+```js
+function test() {
+  const a = 5
+  console.warn(a)
+}
+```
+
+**Step 1**: Identify the AST node type we want to target. Going to AST explorer and copy paste our `from` code and click on `alert`. It will highlight the node type on the right. We see that the node type to target now is called `CallExpression`.
+
+![Alt Text](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/lqup8hpg71gi2w3y4eer.png)
+
+So any function call is a `CallExpression` and any function call on an object is called `MemberExpression`. So `alert` is `CallExpression` and `console.warn` is `MemberExpression`.
+
+A MemberExpression always will have an Object(console) and a property (warn) in our case.
+
+**Step 2**: Once again fire up your editor and create new file. Let's name it `convertAlertToConsole.js`.
+
+Like before we start our plugin with the skeleton code
+
+```js
+module.exports = function (babel) {
+  const t = babel.types
+  return {
+    name: 'convert-alert-to-console', // this is optional
+    visitor: {},
+  }
+}
+```
+
+**Step 3**: So now since we know that the node we have to target is a `CallExpression`, lets write our code
+
+```js
+module.exports = function(babel) {
+  const t = babel.types;
+  return {
+    name: "convert-alert-to-console", // this is optional
+    visitor: {
+      CallExpression: function(path)
+      }
+    }
+  };
+};
+```
+
+**Step 4**: Since we do not wish to target every other function call, let us put a if condition to specify that we only wish to target a call expression with the name `alert`
+
+```js
+module.exports = function (babel) {
+  const t = babel.types
+  return {
+    name: 'convert-alert-to-console', // this is optional
+    visitor: {
+      CallExpression: function (path) {
+        if (path.node.callee.name === 'alert') {
+        }
+      },
+    },
+  }
+}
+```
+
+Now the only part remaining is figuring out what to replace it with.
+
+**Step 5**: We go back to AST explorer and copy our `to` code this time and clicking on console.warn will tell us that we need to replace it with another call expression as all function calls are call expressions but since this is an `object property function call` that is why it needs a call expression with a member expression inside it as it's callee.
+
+![Alt Text](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/xijcwoked2j3cohb9vgo.png)
+
+```js
+module.exports = function (babel) {
+  const t = babel.types
+  return {
+    name: 'convert-alert-to-console', // this is optional
+    visitor: {
+      CallExpression: function (path) {
+        if (path.node.callee.name === 'alert') {
+          const args = path.node.arguments
+          path.replaceWith(
+            t.callExpression(
+              t.memberExpression(t.identifier('console'), t.identifier('warn')),
+              args
+            )
+          )
+        }
+      },
+    },
+  }
+}
+```
+
+And that's it. We wrote our second plugin too 🥳. Isn't all of this too easy? 🤗
+
+## 📕 Bonus Plugin - Remove data-test-id from react app
+
+In this we will remove every `data-test-id` attribute from our react app. As `data-test-id` is usually needed only in the dev env, our plugin can safely remove this from our production bundle.
+
+So our code we wish to change would look something like this
+
+```jsx
+import React from 'react'
+
+const App = () => {
+  return <div data-test-id="test">Hello World</div>
+}
+```
+
+We will convert this to
+
+```jsx
+import React from 'react'
+
+const App = () => {
+  return <div>Hello World</div>
+}
+```
+
+**Step 1**: Identify the AST node type we want to target. Going to AST explorer and copy paste our `from` code and click on `data-test-id`. It will highlight the node type on the right. We see that the node type to target now is called `JSXAttribute `.
+
+![Alt Text](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/cz089p4dws7qge76e0xh.png)
+
+**Step 2**: Fire up your editor and create new file. Let's name it `removeDataAttribute.js`.
+Like before we start our plugin with the skeleton code
+
+```js
+module.exports = function (babel) {
+  return {
+    name: 'remove-date-test-id', // this is optional
+    visitor: {},
+  }
+}
+```
+
+**Step 3**: So now since we know that the node we have to target is a `JSXAttribute`, lets write our code
+
+So our code will look like this now
+
+```js
+module.exports = function (babel) {
+  return {
+    name: 'remove-date-test-id', // this is optional
+    visitor: {
+      JSXAttribute: function (path) {},
+    },
+  }
+}
+```
+
+**Step 4**: Now the only step remaining in this babel plugin is to remove this jsx attribute node and we do it like this:
+
+```js
+module.exports = function (babel) {
+  return {
+    name: 'remove-date-test-id', // this is optional
+    visitor: {
+      JSXAttribute: function (path) {
+        if (path.node.name.name === 'data-test-id') {
+          path.remove()
+        }
+      },
+    },
+  }
+}
+```
+
+And that's it. We wrote another plugin 🥳.
+
+Github Repo: https://github.com/vivek12345/webcamp-zagreb-demo
+
+## 🍬 Conclusion
+
+I hope this helps us all in understanding that AST's are not complicated and all of us can improve our developer tools ecosystem by either making linter plugins or writing babel plugins or doing large scale refactors using codemods. And if you are in the mood, you could also write a css in js library.
+
+## 🔗 References
+
+- [Leveling up parsing game] (https://medium.com/basecs/leveling-up-ones-parsing-game-with-asts-d7a6fc2400ff) by Vaidehi Joshi
+- [AST explorer](https://astexplorer.net/) by Felix Kling
+- [Babel handbook] (https://github.com/jamiebuilds/babel-handbook)
+- [Step by step guide to write a babel transformation](https://lihautan.com/step-by-step-guide-for-writing-a-babel-transformation/)
+- [Magical land of AST's](https://www.youtube.com/watch?v=669ste6xgkks&ab_channel=HasgeekTV)
