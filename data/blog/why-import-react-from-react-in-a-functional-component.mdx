@@ -1,0 +1,56 @@
+---
+title: 'Why import React from “react” in a functional component?'
+date: '2018-05-24'
+tags: ['javascript', 'react', 'babel', 'import react', 'functional component']
+summary: "When I first started working with React, I always had this confusion that even though my functional component has no reference to React(since I could not see any mention of React keyword in the component), then why do I need to have import React from 'react'; at the top of my file. 😕"
+---
+
+![import react from react stock image](/static/images/blogs/importReact.jpeg)
+
+## 🕵️‍ Confusion:
+
+When I first started working with React, I always had this confusion that even though my functional component has no reference to React(since I could not see any mention of React keyword in the component), then why do I need to have import React from “react"; at the top of my file. 😕
+
+This is how we create a simple functional component in react:-
+
+```jsx
+import React from 'react'
+const App = () => <div>Hello World!!!</div>
+export default App
+```
+
+## 🔬 Problem:
+
+This code looks like a very simple function with some html inside it but it fails to work if we use it without
+
+```jsx
+import React from 'react'
+```
+
+The problem here is if it’s just some function with html inside it, then it should work without the import statement 🤔
+
+## 😍 Finding:
+
+After reading more about it and after seeing the code which get’s generated after transpilation, I could finally understand why it’s needed 😯
+
+The reason is because of JSX 😃 The code which looked like plain html to me is actually JSX 🙇
+
+So after babel transpilation, this is how the same code looks
+
+```js
+var App = function App() {
+  return React.createElement('div', null, 'Hello World!!!')
+}
+```
+
+The important thing to focus here is **React.createElement** and this is the reason why we need to import React at the start of any functional component. 🎉 🙌
+
+Hope this helps anyone who is starting with React and is confused about why `import React from “react"` is needed.
+
+For further reading as to understand what gets transpiled to what, please try the Babel REPL
+
+[**Babel · _The compiler for writing next generation JavaScript_**](https://babeljs.io/repl/)
+
+Give this article a clap if you found it helpful!
+
+You can follow me on twitter [@VivekNayyar09](https://twitter.com/VivekNayyar09) for more updates on what I am experimenting with.

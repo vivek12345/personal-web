@@ -1,0 +1,353 @@
+---
+title: 'Magic of React Suspense with concurrent react and React.lazy API'
+date: '2019-02-07'
+tags: ['javascript', 'react', 'reactjs', 'concurrent', 'reactsuspense']
+summary: "Let's get introduced to some of the new features coming to React, some of which have been released as part of the latest stable release and some of them are still in **_unstable_** mode and it’s quite possible that the implementation of the api might change over time."
+---
+
+![React suspense stock image](/static/images/blogs/suspenseHero.jpeg)
+
+[Dan Abramov](https://twitter.com/dan_abramov) in his talk “[Beyond React 16](https://www.youtube.com/watch?v=nLF0n9SACd4)” at JSConf Iceland 2018 said:
+
+> _We’ve built a generic way to ensure that high-priority updates like user input don’t get blocked by rendering low-priority updates._
+
+Let’s understand what this means and also get introduced to some of the new features coming to React, some of which have been released as part of the latest stable release and some of them are still in **_unstable_** mode and it’s quite possible that the implementation of the api might change over time.
+
+Things we got introduced to in the talk:
+
+- [Suspense](https://reactjs.org/docs/code-splitting.html)
+
+- [react-cache](https://www.npmjs.com/package/react-cache)
+
+- Defer set state with [scheduler](https://www.npmjs.com/package/scheduler)
+
+- Concurrent React Mode
+
+- Code splitting with [React.lazy](https://reactjs.org/docs/code-splitting.html)
+
+## **Suspense**
+
+> React.Suspense in simple words means we can suspend the rendering of our component or components until some condition is met( for example data from an endpoint or a resource is loaded) and until then show a fallback(for-example a spinner)
+
+**Why do we need this?**
+
+If suspense is all about just showing a spinner till data loads, can we not do that today as well?
+
+I mean we have been doing the same thing since a long time by keeping a loading state as true and till the data is not fetched we show a spinner and when data fetch is complete we set the loading state to false.
+
+An example of how we have been currently doing it:
+
+```js
+state = {
+  loading: true,
+  data: null,
+}
+```
+
+So the question is if it can be done even today then what is it that suspense is bringing into our codebase?
+
+The answer to that is yes it’s still possible to use loading state and play around with it to show/hide the spinner but as the application grows complex this becomes tedious to manage.
+
+For example:-
+
+```jsx
+<RestaurantDetail>
+    <RestaurantInfo />
+    <RestaurantAlbums />
+    <RestaurantReviews>
+        <RestaurantReviewDetail>
+        <RestaurantReviewDetail>
+        <RestaurantReviewDetail>
+    </RestaurantReviews>
+</RestaurantDetail>
+```
+
+In the above example we can have 4 api calls:
+
+1. **_<RestaurantInfo />_** component making one api call for getting basic information about a Restaurant
+
+2. **_<RestaurantAlbums />_** api to fetch all the images of that Restaurant
+3. **_<RestaurantReviews />_** api to fetch all reviews
+4. **_<RestaurantReviewDetail />_** api to fetch some details around those individual reviews like comments, likes etc.
+
+The problem with the above code structure is that we need to somehow manage the loading state and data fetching states for all those api calls that are happening above.
+
+**So what is the solution?**
+
+For the above problem we have multiple solutions which can be as follows:
+
+- Delegate all api calling logic into the parent container and let all of them wait until all data fetching is complete and pass data to child components as props. The problem with this approach is now the parent needs to be aware of all api calls which are needed by child components and also maintain a complex state for all these api responses.
+
+- Make all the child components smart/stateful components and let each of them manage their own **loading** and **data** states. This is complex since converting a stateless component to a stateful component is not something we would want to do.
+
+- The third solution is using **Suspense**
+
+**With Suspense it works differently. How?**
+
+> With suspense and react-cache, we can use our same functional component and still fetch data from it.
+
+The difference here being instead of fetching data from a lifecycle method like componentDidMount we will fetch this data from inside of render .
+
+**How is this even possible?**
+
+> This becomes possible using [react-cache](https://www.npmjs.com/package/react-cache) and suspense
+
+Now a word of caution, [react-cache](https://www.npmjs.com/package/react-cache) is still unstable and it’s implementation or api might change over time.
+
+An example of how to use react-cache to create a restaurant list fetching resource:-
+
+```jsx
+import { unstable_createResource } from 'react-cache'
+
+const restaurantListResource = unstable_createResource(() => {
+  return new Promise((resolve, reject) => {
+    fetch('https://8kq2vljq58.sse.codesandbox.io/restaurants')
+      .then((res) => res.json())
+      .then((response) => {
+        const { restaurants } = response
+        resolve(restaurants)
+      })
+  })
+})
+```
+
+## **react-cache**
+
+In the above code snippet we are using **_unstable_createResource_** and as the name suggests this is still **unstable**
+
+> unstable_createResource takes a **function** as one of its arguments and a **hash** **function** as the second argument which is used to create the key for the hash map which caches the data.
+
+The whole suspense and suspended rendering magic comes into play with this **_unstable_createResource_** because this function** throws a promise.**
+
+![Dan’s tweet about cache throwing a promise and react catching it](/static/images/blogs/dan-tweet.png)
+
+A layman implementation of what it might look like could be:
+
+```js
+const unstable_createResource = (method) => {
+  let resolved = new Map();
+  return {
+    read(key) => {
+      if (!resolved.has(key)) {
+        throw method(...args)
+          .then(val => resolved.set(key, val));
+      }
+      return resolved.get(key);
+    }
+  };
+}
+```
+
+If you notice, it returns an object with a **read** function which takes **key** as a param which is usually the hash key of the hash map and if the data is not fetched yet then this read function will **_throw a promise_** as we see on line no 6.
+
+The actual implementation of this function can be found here:-
+
+[https://github.com/facebook/react/blob/master/packages/react-cache/src/ReactCache.js#L142](https://github.com/facebook/react/blob/master/packages/react-cache/src/ReactCache.js#L142)
+
+**Who will catch this promise?**
+
+**Error Boundaries **will catch this promise like how they used to catch the error thrown by React render.
+More information on Error Boundaries can be found on reactjs.org:
+[https://reactjs.org/docs/error-boundaries.html](https://reactjs.org/docs/error-boundaries.html)
+
+So now with **_unstable_createResource_** our **_RestaurantList_** component would look something like this:
+
+```jsx
+const RestaurantList = () => {
+  // if no restaurants are found in the cache, the suspense will throw a promise
+  const restaurants = restaurantListResource.read()
+  // this line will have to wait until that promise resolves
+  return (
+    <article>
+      <h2 className="f3 fw4 pa3 mv0">Restaurant List</h2>
+      <div className="cf pa2">{renderRestaurants(restaurants)}</div>
+    </article>
+  )
+}
+```
+
+**Who will implement componentDidCatch?**
+
+This is where **Suspense** from react comes into play. **React.Suspense** has a **componentDidCatch** sort of mechanism which will catch this promise and show a fallback until the promise is resolved.
+
+```jsx
+import React, { Suspense } from 'react'
+
+const RestaurantListContainer = (props) => {
+  return (
+    <Suspense fallback={'Loading...'}>
+      <RestaurantList />
+    </Suspense>
+  )
+}
+```
+
+This concludes the topic of using React.Suspense to suspend rendering until data fetching is complete and until then show a fallback. We learnt about **react-cache** in this topic and how it can be used to throw a promise and suspend rendering.
+
+## **Concurrent React**
+
+To take advantage of the asynchronous capabilities of concurrent React, We change the way we render our root **<App />** element.
+
+Where we do this in standard React:
+
+```jsx
+ReactDOM.render(<App />, document.getElementById('root'))
+```
+
+We do this for concurrent React:
+
+```jsx
+ReactDOM.createRoot(document.getElementById('root')).render(<App />)
+```
+
+That is all that needs to be changed to enable Concurrent React.
+
+This brings us with a new magical capability which is:-
+
+- maxDuration prop- this is the time in **_ms_** after which our fallback component will show up. This will avoid screen flickering issue which usually occurs on faster network where the loader shows up for few ms and then the data comes immediately. This will make sure that for faster networks Spinner will never show up thereby avoiding screen flickering.
+
+![Fiber architecture ](/static/images/blogs/dan-tweet-1.png)
+
+### React.StrictMode
+
+If you are developing in React 16.6, what has been recommended is to wrap **React.StrictMode** around **App** so any unsupported features you may integrate will be prompted as warnings in your development console.
+
+Wrap strict mode around your app like so:
+
+```jsx
+ReactDOM.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+  document.getElementById('root')
+)
+```
+
+## **Defer Mode in Concurrent React**
+
+> We can defer certain setState calls and let it wait until some other important operations like data fetching finishes for example clicking on a restaurant card and not rendering the detail page until all the data for the detail page has been loaded.
+
+This is the kind of stuff it allows you to do:
+
+![Demo Gif](/static/images/blogs/andrew-tweet.png)
+[Tweet Link](https://twitter.com/acdlite/status/954798592320942081)
+
+To use this we need another **_unstable_** api which is part of an **_npm_** package called as [scheduler](https://www.npmjs.com/package/scheduler)
+
+```jsx
+import { unstable_scheduleCallback as defer } from 'scheduler'
+```
+
+To defer a setState call we can do like the function below where I am delaying showing the detail page until the data for that page is loaded.
+
+```jsx
+import { unstable_scheduleCallback as defer } from 'scheduler'
+
+toggleDetailPage = (id) => {
+  if (id) {
+    this.setState({
+      id: id,
+    })
+    defer(() => {
+      this.setState({
+        showDetail: true,
+      })
+    })
+  } else {
+    this.setState({
+      id: id,
+      showDetail: false,
+    })
+  }
+}
+```
+
+Complete example with concurrent react, createResource, Suspense and defer mode can be found here
+[https://codesandbox.io/s/kwjjovx5wo](https://codesandbox.io/s/kwjjovx5wo)
+
+Here is what Dan had to say about this whole set state defer:
+
+![Suspense lets you *delay* rendering the content for a few seconds until the whole tree is ready. It *doesn’t* destroy the previous view while this is happening.](/static/images/blogs/dan-tweet-2.png)
+
+## **Code Splitting with [React.lazy](https://reactjs.org/docs/code-splitting.html) and React.Suspense**
+
+> The React.lazy function lets you render a dynamic import as a regular component.
+
+Before:
+
+```jsx
+import React from 'react'
+import RestaurantListComponent from './RestaurantList'
+
+function App() {
+  return (
+    <div>
+      <RestaurantListComponent />
+    </div>
+  )
+}
+```
+
+**Note**: In the above implementation the **_RestaurantListComponent_** will be part of your main bundle and will not be lazy-loaded.
+
+After:
+
+```jsx
+import React, { Suspense, lazy } from 'react'
+const RestaurantListComponent = lazy(() => import('./RestaurantList')) // code-splitted, on demand loaded component
+
+function App() {
+  return (
+    <Suspense fallback="Loading...">
+      <RestaurantListComponent />
+    </Suspense>
+  )
+}
+```
+
+**Note**: With this approach, **_RestaurantListComponent _**will be a code splitted component loaded on demand.
+
+![Example of lazily loaded component in a chunk “**1.chunk.js”**](/static/images/blogs/suspense-demo.gif)\*Example of lazily loaded component in a chunk “**1.chunk.js”\***
+
+**How to use these API’s?**
+
+- React.Suspense with React.lazy is a stable API and can be installed from npm as the latest stable version of react and react-dom
+
+```bash
+npm install react react-dom
+```
+
+- react-cache and scheduler are unstable. Here is how you can still use them:
+
+```bash
+npm install react@16.7.0-alpha.2 - next
+npm install react-dom@16.7.0-alpha.2 - next
+npm install react-cache@2.0.0-alpha.1
+npm install scheduler@0.11.2
+```
+
+## **Conclusion**
+
+To conclude, I am really excited about all these api’s to be stable soon.
+What are your thoughts on these features? Let me know in the comments section! 😊
+
+Here is the roadmap from the React team for the upcoming releases:
+[https://reactjs.org/blog/2018/11/27/react-16-roadmap.html](https://reactjs.org/blog/2018/11/27/react-16-roadmap.html)
+
+## **Resources**
+
+- [React lazy, Suspense and Concurrent React Breakdown with Examples](https://medium.com/@rossbulat/react-lazy-suspense-and-concorrent-react-breakdown-with-examples-2758de98cb1c)
+
+- [Beyond React 16: Time Slicing and Suspense API](https://auth0.com/blog/time-slice-suspense-react16/)
+
+- [Dan’s JSCONF talk](https://www.youtube.com/watch?v=nLF0n9SACd4)
+
+- [React Suspense: Async Rendering in React](https://blog.logrocket.com/async-rendering-in-react-with-suspense-5d0eaac886c8)
+
+- [What’s new in React — Presentation](http://react-suspense-lazy.surge.sh/#/)
+
+- [Fresh Concurrent React](https://github.com/sw-yx/fresh-concurrent-react/blob/master/Intro.md)
+
+- [Twitter thread around this topic](https://twitter.com/dan_abramov/status/970758867779977217)
+
+Special thanks to [Sara Vieira](https://twitter.com/NikkitaFTW) for reviewing this 😊
